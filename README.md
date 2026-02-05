@@ -64,11 +64,11 @@ All logs are saved in the **same directory as the script**, regardless of where 
 ### Usage
 
 UDP mode:
-python3 video_sender.py \
---host <receiver_ip_or_0.0.0.0> \
---port 5000 \
---quality high|low \
---protocol udp|tcp \
---camera nvargus|v4l2|test \
---log sender_test.jsonl
+- python3 video_sender.py \
+- --host <receiver_ip_for_udp|0.0.0.0_for_tcp> \
+- --port 5000 \
+- --quality high|low \
+- --protocol udp|tcp \
+- --camera nvargus|v4l2|test \
+- --log sender_test.jsonl
 
