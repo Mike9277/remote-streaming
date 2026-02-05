@@ -62,14 +62,15 @@ Encodes to H.264 and streams via:
 All logs are saved in the **same directory as the script**, regardless of where the process is launched.
 
 ### Usage
+```
 python3 video_sender.py \
---host <receiver_ip_for_udp|0.0.0.0_for_tcp> \
+--host <receiver_ip_for_udp | 0.0.0.0_for_tcp> \
 --port 5000 \
 --quality high|low \
 --protocol udp|tcp \
 --camera nvargus|v4l2|test \
 --log sender_test.jsonl
-
+```
 ---
 
 ## 3. Video Receiver
@@ -81,12 +82,13 @@ Runs on the receiver machine (e.g., `/home/username/remote-streaming/video_recei
 Receives the video stream, decodes it, displays it, and collects metrics.
 
 ### Usage
+```
 python3 video_receiver.py \
 --host <jetson_ip> \
 --port 5000 \
---protocol tcp \
+--protocol udp|tcp \
 --log receiver_test.jsonl
-
+```
 ---
 
 ## 4. Orchestration Script ('run_stream.sh')
@@ -102,8 +104,10 @@ This script automates the entire workflow.
   → ensures logs are saved correctly
 
 ### Usage
+```
 ./run_stream.sh <receiver_ip> <quality> <protocol> <tag>
-
+```
+---
 ## 5. Logging Format
 
 ### JSONL time-series
