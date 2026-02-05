@@ -19,7 +19,7 @@ remote-streaming/
 ├── video_receiver.py      # Runs on receiver
 ├── run_stream.sh          # Orchestrates sender + receiver
 └── README.md
-
+```
 
 ---
 
@@ -97,12 +97,13 @@ This script automates the entire workflow.
 
 ### Responsibilities
 
-- kills any previous sender on the Jetson
+- kills any previous sender on the sender server
 - starts the sender **remotely** via SSH
-- stores the sender’s **real PID** on the Jetson
+- stores the sender’s **real PID** on the sender server
 - starts the receiver **locally**
-- when the receiver exits, sends **SIGINT** to the sender  
-  → ensures logs are saved correctly
+- when the receiver exits, sends **SIGINT** to the sender → ensures logs are saved correctly
+
+Using this script will require the receiver to already have the necessary SSH permissions to log into the sender and run the sender server and run commands remotely. This may be configured beforehand; the script assumes the permission are already in place.
 
 ### Usage
 <tag> allows to specify a string that will be attached to .csv and .jsonl filenames to better organize them.
