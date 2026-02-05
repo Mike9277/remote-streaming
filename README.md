@@ -59,6 +59,16 @@ Encodes to H.264 and streams via:
 - **UDP** (stateless, low latency)
 - **TCP** (reliable, ordered)
 
-### Logging
-The sender generates three files:
+All logs are saved in the **same directory as the script**, regardless of where the process is launched.
+
+### Usage
+
+UDP mode:
+python3 video_sender.py \
+--host <receiver_ip_or_0.0.0.0> \
+--port 5000 \
+--quality high|low \
+--protocol udp|tcp \
+--camera nvargus|v4l2|test \
+--log sender_test.jsonl
 
