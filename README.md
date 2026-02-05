@@ -104,8 +104,10 @@ This script automates the entire workflow.
   → ensures logs are saved correctly
 
 ### Usage
+<tag> allows to specify a string that will be attached to .csv and .jsonl filenames to better organize them.
+
 ```
-./run_stream.sh <receiver_ip> <quality> <protocol> <tag>
+./run_stream.sh <receiver_ip_for_udp | sender_ip_for_tcp> <quality high|low> <protocol udp|tcp> <tag>
 ```
 ---
 ## 5. Logging Format
