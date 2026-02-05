@@ -12,13 +12,14 @@ This repository contains a complete video‑streaming workflow built around GStr
 The system supports UDP and TCP transport, multiple camera sources, and automatic metric collection on both ends.
 
 ## Repository Structure
-
+```text
 remote-streaming/
 │
 ├── video_sender.py        # Runs on sender
 ├── video_receiver.py      # Runs on receiver
 ├── run_stream.sh          # Orchestrates sender + receiver
 └── README.md
+
 
 ---
 
