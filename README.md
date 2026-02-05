@@ -20,12 +20,11 @@ remote-streaming/
 ├── run_stream.sh          # Orchestrates sender + receiver
 └── README.md
 
-
 ---
 
 ## 1. Overview
 
-The system streams H.264 video from a Jetson device to a remote receiver using GStreamer pipelines.  
+The system streams H.264 video from a sender device to a remote receiver using GStreamer pipelines.  
 Both sender and receiver:
 
 - collect real‑time metrics (bitrate, frames, bytes, packet loss…)
@@ -43,15 +42,15 @@ The `run_stream.sh` script:
 
 ---
 
-## 2. Video Sender (Jetson)
+## 2. Video Sender
 
 ### Location
-Runs on the Jetson device (e.g., `/home/smaug/video-stream/video_sender.py`).
+Runs on the sender device (e.g., `/home/username/remote-streaming/video_sender.py`).
 
 ### Purpose
 Captures video from:
 
-- `nvargus` (Jetson CSI camera)
+- `nvargus` (CSI camera)
 - `v4l2` (USB webcam)
 - `test` (synthetic pattern)
 
