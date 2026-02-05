@@ -1,13 +1,10 @@
 ## Video Streaming System
 This repository contains a complete video‑streaming workflow built around GStreamer, designed to send real-time video images from a sender server to a receiver sender. The repository includes:
 
-    A python video sender script, to be executed on the sending server.
-
-    A python video receiver script to be executed on the receiver server. 
-
-    Automated orchestration via a Bash launcher script (execution on the receiver side)
-
-    Time‑series logging, CSV export, and session summaries
+- A python video sender script, to be executed on the sending server.
+- A python video receiver script to be executed on the receiver server.
+- Automated orchestration via a Bash launcher script (execution on the receiver side)
+- Time‑series logging, CSV export, and session summaries
 
 The system supports UDP and TCP transport, multiple camera sources, and automatic metric collection on both ends.
 
@@ -57,8 +54,8 @@ Captures video from:
 
 Encodes to H.264 and streams via:
 
-- **UDP** (stateless, low latency)
-- **TCP** (reliable, ordered)
+- `UDP` (stateless, low latency)
+- `TCP` (reliable, ordered)
 
 All logs are saved in the **same directory as the script**, regardless of where the process is launched.
 
@@ -72,6 +69,7 @@ python3 video_sender.py \
 --camera nvargus|v4l2|test \
 --log sender_test.jsonl
 ```
+
 ---
 
 ## 3. Video Receiver
@@ -90,6 +88,7 @@ python3 video_receiver.py \
 --protocol udp|tcp \
 --log receiver_test.jsonl
 ```
+
 ---
 
 ## 4. Orchestration Script ('run_stream.sh')
