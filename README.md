@@ -84,7 +84,7 @@ Receives the video stream, decodes it, displays it, and collects metrics.
 ### Usage
 ```
 python3 video_receiver.py \
---host <jetson_ip> \
+--host < - | receiver_ip_for_tcp> \
 --port 5000 \
 --protocol udp|tcp \
 --log receiver_test.jsonl
