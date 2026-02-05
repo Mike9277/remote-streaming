@@ -15,7 +15,51 @@ The system supports UDP and TCP transport, multiple camera sources, and automati
 
 remote-streaming/
 │
-├── video_sender.py        # Runs on Jetson (smaug)
-├── video_receiver.py      # Runs on receiver machine
+├── video_sender.py        # Runs on sender
+├── video_receiver.py      # Runs on receiver
 ├── run_stream.sh          # Orchestrates sender + receiver
 └── README.md
+
+
+---
+
+## 1. Overview
+
+The system streams H.264 video from a Jetson device to a remote receiver using GStreamer pipelines.  
+Both sender and receiver:
+
+- collect real‑time metrics (bitrate, frames, bytes, packet loss…)
+- write **JSONL time‑series logs**
+- automatically export **CSV** files
+- generate a **summary JSON** at the end of the session
+
+The `run_stream.sh` script:
+
+- starts the sender remotely via SSH  
+- starts the receiver locally  
+- ensures correct startup order (important for TCP)  
+- sends a clean **SIGINT** to the sender when the receiver stops  
+- guarantees that logs are saved correctly  
+
+---
+
+## 2. Video Sender (Jetson)
+
+### Location
+Runs on the Jetson device (e.g., `/home/smaug/video-stream/video_sender.py`).
+
+### Purpose
+Captures video from:
+
+- `nvargus` (Jetson CSI camera)
+- `v4l2` (USB webcam)
+- `test` (synthetic pattern)
+
+Encodes to H.264 and streams via:
+
+- **UDP** (stateless, low latency)
+- **TCP** (reliable, ordered)
+
+### Logging
+The sender generates three files:
+
