@@ -72,13 +72,13 @@ python3 video_sender.py \
 
 ---
 
-## 3. Video Receiver (Linux workstation)
+## 3. Video Receiver
 
 ### Location
 Runs on the receiver machine (e.g., `/home/username/remote-streaming/video_receiver.py`).
 
 ### Purpose
-Receives the H.264 RTP stream, decodes it, displays it, and collects metrics.
+Receives the video stream, decodes it, displays it, and collects metrics.
 
 ### Usage
 python3 video_receiver.py \
