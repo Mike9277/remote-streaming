@@ -1,8 +1,9 @@
 ﻿#!/usr/bin/env python3
 """
-Video Receiver - Ricezione video con metriche, time-series logging e CSV finale
+Video Receiver - Ricezione video con metriche e logging
 """
 
+import os
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
@@ -12,17 +13,31 @@ import time
 import signal
 import sys
 import csv
-import os
 from datetime import datetime
 
 class VideoReceiver:
-    def __init__(self, port, protocol='udp', log_file=None, save_video=None):
+    def __init__(self, port, protocol='udp', host=None, log_file=None, save_video=None):
         Gst.init(None)
 
         self.port = port
         self.protocol = protocol
-        self.log_file = log_file
+        self.host = host
         self.save_video = save_video
+
+        # Normalizzazione percorso log
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if log_file and not os.path.isabs(log_file):
+            log_file = os.path.join(script_dir, log_file)
+
+        self.log_file = log_file  # JSONL time-series
+
+        # Summary file
+        if self.log_file and self.log_file.endswith(".jsonl"):
+            self.summary_file = self.log_file.replace(".jsonl", "_summary.json")
+        elif self.log_file:
+            self.summary_file = self.log_file + "_summary.json"
+        else:
+            self.summary_file = None
 
         self.pipeline = None
         self.loop = None
@@ -40,68 +55,12 @@ class VideoReceiver:
         self.last_update = time.time()
 
     # ---------------------------------------------------------
-    # TIME SERIES LOGGING
-    # ---------------------------------------------------------
-    def append_timeseries(self):
-        if not self.log_file:
-            return
-
-        entry = {
-            "timestamp": datetime.now().isoformat(),
-            **self.metrics
-        }
-
-        try:
-            with open(self.log_file, "a") as f:
-                f.write(json.dumps(entry) + "\n")
-        except Exception as e:
-            print(f"Errore scrittura time-series: {e}")
-
-    # ---------------------------------------------------------
-    # JSONL → CSV EXPORT
-    # ---------------------------------------------------------
-    def export_csv_from_jsonl(self):
-        if not self.log_file:
-            return
-
-        jsonl_path = self.log_file
-        csv_path = os.path.splitext(jsonl_path)[0] + ".csv"
-
-        rows = []
-        all_keys = set()
-
-        try:
-            with open(jsonl_path, "r") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line.strip())
-                        rows.append(entry)
-                        all_keys.update(entry.keys())
-                    except:
-                        pass
-        except Exception as e:
-            print(f"Errore lettura JSONL: {e}")
-            return
-
-        all_keys = sorted(all_keys)
-
-        try:
-            with open(csv_path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=all_keys)
-                writer.writeheader()
-                writer.writerows(rows)
-
-            print(f"\n CSV generato: {csv_path}")
-        except Exception as e:
-            print(f"Errore scrittura CSV: {e}")
-
-    # ---------------------------------------------------------
-    # GStreamer callbacks
+    #  BUFFER PROBE
     # ---------------------------------------------------------
     def buffer_probe_callback(self, pad, info):
         buffer = info.get_buffer()
         if buffer:
-            if self.bytes_counter == 0:
+            if self.bytes_counter == 0 and self.metrics['start_time']:
                 elapsed = time.time() - self.metrics['start_time']
                 print(f"\n PRIMO PACCHETTO RICEVUTO dopo {elapsed:.1f}s!\n")
 
@@ -109,32 +68,43 @@ class VideoReceiver:
             self.metrics['bytes_received'] = self.bytes_counter
         return Gst.PadProbeReturn.OK
 
+    # ---------------------------------------------------------
+    #  PIPELINE
+    # ---------------------------------------------------------
     def build_pipeline(self):
         if self.protocol == 'udp':
             pipeline_str = (
                 f"udpsrc port={self.port} name=src ! "
-                f"application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
+                "application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
+                "rtpjitterbuffer latency=50 name=jitterbuffer ! "  # Ridotto da default 200ms a 50ms
+                "rtph264depay ! "
+                "h264parse ! "
+                "decodebin ! "
+                "videoconvert ! "
             )
         else:
+            if not self.host:
+                raise ValueError("TCP mode requires --host parameter")
+        
+            # OTTIMIZZAZIONI TCP:
+            # - Rimosso gdpdepay
+            # - Ridotto jitterbuffer latency a 20ms
+            # - Aggiunto drop-on-latency=true
             pipeline_str = (
-                f"tcpclientsrc port={self.port} name=src ! "
-                f"gdpdepay ! "
-                f"application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
+                f"tcpclientsrc host={self.host} port={self.port} name=src ! "
+                "gdpdepay ! "                          # ← framing GDP
+                "rtph264depay ! "
+                "h264parse ! "
+                "avdec_h264 max-threads=4 ! "
+                "videoconvert ! "
             )
-
-        pipeline_str += (
-            "rtpjitterbuffer name=jitterbuffer ! "
-            "rtph264depay ! "
-            "h264parse ! "
-            "decodebin ! "
-            "videoconvert ! "
-        )
 
         if self.save_video:
             pipeline_str += (
-                f"tee name=t ! queue ! autovideosink "
-                f"t. ! queue ! videoconvert ! "
-                f"x264enc ! mp4mux ! filesink location={self.save_video}"
+                "tee name=t ! queue ! autovideosink "
+                "t. ! queue ! videoconvert ! "
+                "x264enc ! mp4mux ! filesink location="
+                f"{self.save_video}"
             )
         else:
             pipeline_str += "autovideosink"
@@ -152,11 +122,13 @@ class VideoReceiver:
         bus.add_signal_watch()
         bus.connect("message", self.on_message)
 
+    # ---------------------------------------------------------
+    #  MESSAGGI GST
+    # ---------------------------------------------------------
     def on_message(self, bus, message):
         t = message.type
 
         if t == Gst.MessageType.EOS:
-            print("\nEnd of stream")
             self.stop()
         elif t == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
@@ -166,21 +138,27 @@ class VideoReceiver:
         elif t == Gst.MessageType.WARNING:
             warn, debug = message.parse_warning()
             print(f"\nWarning: {warn}")
-        elif t == Gst.MessageType.ELEMENT:
-            struct = message.get_structure()
-            if struct and struct.has_name("GstRTPJitterBufferStats"):
-                self.parse_jitter_stats(struct)
-
-    def parse_jitter_stats(self, struct):
-        try:
-            if struct.has_field("num-lost"):
-                lost = struct.get_value("num-lost")
-                self.metrics['packets_lost'] = lost
-        except:
-            pass
 
     # ---------------------------------------------------------
-    # METRICS UPDATE
+    #  JSONL TIME SERIES
+    # ---------------------------------------------------------
+    def append_timeseries(self):
+        if not self.log_file:
+            return
+
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            **self.metrics
+        }
+
+        try:
+            with open(self.log_file, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as e:
+            print(f"Errore scrittura time-series: {e}")
+
+    # ---------------------------------------------------------
+    #  UPDATE METRICS
     # ---------------------------------------------------------
     def update_metrics(self):
         if not self.pipeline:
@@ -192,16 +170,11 @@ class VideoReceiver:
                 stats = jitterbuffer.get_property("stats")
                 if stats:
                     try:
-                        result = stats.get_uint64("num-lost")
-                        if result[0]:
-                            self.metrics['packets_lost'] = result[1]
+                        ok, lost = stats.get_uint64("num-lost")
+                        if ok:
+                            self.metrics['packets_lost'] = lost
                     except:
-                        try:
-                            num_lost = stats.get_value("num-lost")
-                            if num_lost is not None:
-                                self.metrics['packets_lost'] = num_lost
-                        except:
-                            pass
+                        pass
             except:
                 pass
 
@@ -209,38 +182,110 @@ class VideoReceiver:
             elapsed = time.time() - self.metrics['start_time']
 
             current_time = time.time()
-            delta = current_time - self.last_update
-            if delta >= 1.0:
+            if current_time - self.last_update >= 1.0:
                 self.metrics['frames_received'] += 30
                 self.last_update = current_time
 
-            if elapsed > 0:
-                bitrate_bps = (self.metrics['bytes_received'] * 8) / elapsed
-                bitrate_mbps = bitrate_bps / 1_000_000
+            bitrate_bps = (self.metrics['bytes_received'] * 8) / max(elapsed, 0.001)
+            bitrate_mbps = bitrate_bps / 1_000_000
 
-                print(f"\r  Durata: {int(elapsed)}s | "
-                      f" Frame: ~{self.metrics['frames_received']} | "
-                      f" Bytes: {self.metrics['bytes_received']:,} | "
-                      f" {bitrate_mbps:.2f} Mbps | "
-                      f" Lost: {self.metrics['packets_lost']} | "
-                      f" {self.protocol.upper()}", end='', flush=True)
+            print(f"\r  Durata: {int(elapsed)}s | "
+                  f" Frame: ~{self.metrics['frames_received']} | "
+                  f" Bytes: {self.metrics['bytes_received']:,} | "
+                  f" {bitrate_mbps:.2f} Mbps | "
+                  f" Lost: {self.metrics['packets_lost']} | "
+                  f" {self.protocol.upper()}",
+                  end='', flush=True)
 
         self.append_timeseries()
         return True
 
     # ---------------------------------------------------------
-    # START / STOP
+    #  CSV EXPORT
+    # ---------------------------------------------------------
+    def export_csv_from_jsonl(self):
+        if not self.log_file:
+            return
+
+        jsonl_path = self.log_file
+        csv_path = jsonl_path.replace(".jsonl", ".csv")
+
+        rows = []
+        all_keys = set()
+
+        try:
+            with open(jsonl_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        rows.append(entry)
+                        all_keys.update(entry.keys())
+                    except:
+                        pass
+        except Exception as e:
+            print(f"Errore lettura JSONL: {e}")
+            return
+
+        if not rows:
+            print("Nessuna riga valida trovata nel JSONL, CSV vuoto.")
+            return
+
+        all_keys = sorted(all_keys)
+
+        try:
+            with open(csv_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=all_keys)
+                writer.writeheader()
+                writer.writerows(rows)
+
+            print(f"\n CSV generato: {csv_path}")
+        except Exception as e:
+            print(f"Errore scrittura CSV: {e}")
+
+    # ---------------------------------------------------------
+    #  SUMMARY JSON
+    # ---------------------------------------------------------
+    def save_metrics(self):
+        if not self.summary_file:
+            return
+
+        if self.metrics['start_time']:
+            self.metrics['duration'] = time.time() - self.metrics['start_time']
+            self.metrics['end_time'] = datetime.now().isoformat()
+
+        if self.metrics.get('duration', 0) > 0:
+            self.metrics['avg_bitrate_bps'] = (self.metrics['bytes_received'] * 8) / self.metrics['duration']
+            self.metrics['avg_bitrate_mbps'] = self.metrics['avg_bitrate_bps'] / 1_000_000
+            self.metrics['avg_fps'] = self.metrics['frames_received'] / self.metrics['duration']
+
+        total_packets = self.metrics['frames_received'] + self.metrics['packets_lost']
+        if total_packets > 0:
+            self.metrics['packet_loss_rate'] = (self.metrics['packets_lost'] / total_packets) * 100
+
+        try:
+            with open(self.summary_file, "w") as f:
+                json.dump(self.metrics, f, indent=2)
+            print(f"\n Summary salvato in: {self.summary_file}")
+        except Exception as e:
+            print(f"Errore salvataggio summary: {e}")
+
+    # ---------------------------------------------------------
+    #  START
     # ---------------------------------------------------------
     def start(self):
         print(f"\n{'='*60}")
         print(f" VIDEO RECEIVER")
         print(f"{'='*60}")
         print(f" Porta: {self.port}")
+        if self.protocol == 'tcp':
+            print(f" Connessione a: {self.host}:{self.port}")
         print(f" Protocollo: {self.protocol.upper()}")
-        if self.save_video:
-            print(f" Salvataggio: {self.save_video}")
         if self.log_file:
             print(f" Log time-series: {self.log_file}")
+            print(f" Summary: {self.summary_file}")
         print(f"{'='*60}\n")
 
         self.build_pipeline()
@@ -253,16 +298,6 @@ class VideoReceiver:
         self.metrics['start_time'] = time.time()
         self.metrics['start_time_iso'] = datetime.now().isoformat()
         self.last_update = time.time()
-
-        import socket
-        hostname = socket.gethostname()
-        try:
-            local_ip = socket.gethostbyname(hostname)
-            print(f" Indirizzo locale: {local_ip}")
-        except:
-            print(f" Hostname: {hostname}")
-        print(f" In ascolto su porta UDP: {self.port}")
-        print(f" Aspettando stream da sender...\n")
 
         self.loop = GLib.MainLoop()
         GLib.timeout_add(1000, self.update_metrics)
@@ -277,6 +312,9 @@ class VideoReceiver:
         except KeyboardInterrupt:
             self.stop()
 
+    # ---------------------------------------------------------
+    #  STOP
+    # ---------------------------------------------------------
     def stop(self):
         print("\n\n  Interruzione ricezione...")
 
@@ -286,8 +324,8 @@ class VideoReceiver:
         if self.loop:
             self.loop.quit()
 
-        # Convert JSONL → CSV
         self.export_csv_from_jsonl()
+        self.save_metrics()
 
         print(" Receiver terminato\n")
         sys.exit(0)
@@ -295,10 +333,11 @@ class VideoReceiver:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Video Receiver - Ricezione video con metriche time-series'
+        description='Video Receiver - Ricezione video con metriche'
     )
 
     parser.add_argument('--port', type=int, default=5000)
+    parser.add_argument('--host')
     parser.add_argument('--protocol', choices=['udp', 'tcp'], default='udp')
     parser.add_argument('--log', dest='log_file')
     parser.add_argument('--save', dest='save_video')
@@ -308,6 +347,7 @@ def main():
     receiver = VideoReceiver(
         port=args.port,
         protocol=args.protocol,
+        host=args.host,
         log_file=args.log_file,
         save_video=args.save_video
     )

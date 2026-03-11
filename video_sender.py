@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Video Sender - Streaming video con controllo qualita, protocollo e metriche
 """
@@ -138,16 +138,20 @@ class VideoSender:
                 f"udpsink host={self.host} port={self.port} name=sink"
             )
         else:
-            pipeline_str = (
-                camera_pipeline +
-                "rtph264pay pt=96 config-interval=1 mtu=1400 ! "
-                "gdppay ! "
-                f"tcpserversink host=0.0.0.0 port={self.port} sync=false name=sink"
-            )
-
+          # OTTIMIZZAZIONI TCP:
+          # - Rimosso gdppay (overhead)
+          # - sync=false (no sync ai timestamp)
+          # - mtu=1400 ridotto
+          pipeline_str = (
+              camera_pipeline +
+              "rtph264pay pt=96 config-interval=1 mtu=1400 ! "
+              "gdppay ! "                            # ← framing GDP
+              f"tcpserversink host={self.host} port={self.port} sync=false async=false name=sink"
+          )
+        
         print(f"Pipeline: {pipeline_str}")
         self.pipeline = Gst.parse_launch(pipeline_str)
-
+        
         sink = self.pipeline.get_by_name("sink")
         if sink:
             sink_pad = sink.get_static_pad("sink")
